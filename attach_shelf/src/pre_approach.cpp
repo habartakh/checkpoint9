@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <functional>
@@ -8,21 +9,22 @@
 #include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/detail/odometry__struct.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "rclcpp/logging.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
-float obstacle = 0.0;
-int degrees = 0;
+double obstacle = 0.3;
+double degrees = 0;
 
 class PreApproachNode : public rclcpp::Node {
 public:
   PreApproachNode() : Node("pre_approach_node") {
 
-    cmd_vel_publisher =
-        this->create_publisher<geometry_msgs::msg::Twist>("/robot/cmd_vel", 10);
+    cmd_vel_publisher = this->create_publisher<geometry_msgs::msg::Twist>(
+        "/diffbot_base_controller/cmd_vel_unstamped", 10);
     timer_ = this->create_wall_timer(
         500ms, std::bind(&PreApproachNode::timer_callback, this));
 
@@ -34,9 +36,29 @@ public:
   }
 
 private:
-  void timer_callback() {}
+  void timer_callback() {
+    geometry_msgs::msg::Twist twist_cmd;
 
-  void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)  {
+    // first advance the robot to the desired location
+    //  right in front of the wall
+    if (std::abs(front_distance - obstacle) > 0.1) {
+      RCLCPP_INFO(this->get_logger(), "The front distance is: %f ",
+                  front_distance);
+      RCLCPP_INFO(this->get_logger(), "Full speed ahead!!");
+      twist_cmd.linear.x = 0.2;
+      twist_cmd.angular.z = 0.0;
+    }
+
+    else {
+      RCLCPP_INFO(this->get_logger(), "Facing wall, stopping...");
+      twist_cmd.linear.x = 0.0;
+      twist_cmd.angular.z = 0.0;
+    }
+
+    cmd_vel_publisher->publish(twist_cmd);
+  }
+
+  void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
 
     if (!msg->ranges.empty()) {
 
@@ -44,20 +66,21 @@ private:
           msg->ranges.begin() + (msg->ranges.size() / 2); // At the number 540
 
       // For a more robust computation of the front distance, we will use the
-      // average of the distances of the 20 front rays of the laser sensor
-      std::vector<float> front_ranges_copy;
-      std::copy_if(ranges_middle_iterator - 10, ranges_middle_iterator + 10,
-                   std::back_inserter(front_ranges_copy),
-                   [](float x) { return (std::isfinite(x)); });
+      // average of the distances of the 40 front rays of the laser sensor
+      std::vector<double> front_ranges_copy(40);
+      std::replace_copy_if(
+          ranges_middle_iterator - 20, ranges_middle_iterator + 20,
+          front_ranges_copy.begin(), [](double x) { return (std::isinf(x)); },
+          0.0);
 
       front_distance = std::accumulate(front_ranges_copy.begin(),
                                        front_ranges_copy.end(), 0.0) /
                        front_ranges_copy.size();
 
-      RCLCPP_INFO(this->get_logger(), "The front distance is: %f ",
-                  front_distance);
+      // front_distance = msg->ranges[540];
 
-
+      //   RCLCPP_INFO(this->get_logger(), "The front distance is: %f ",
+      //             front_distance);
     }
   }
 
@@ -71,7 +94,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
 
-  float front_distance = 0.0;
+  double front_distance = 0.0;
 };
 
 int main(int argc, char *argv[]) {
