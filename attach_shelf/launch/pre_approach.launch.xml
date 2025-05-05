@@ -2,6 +2,8 @@
     <arg name="obstacle" default="0.0"/>
     <arg name="degrees" default="0"/>
 
+    <let name="rviz_config" value="$(find-pkg-share attach_shelf)/rviz/default.rviz"/>
+    <node name="rviz2" pkg="rviz2" exec="rviz2" args="-d $(var rviz_config)"/>
 
     <node pkg="attach_shelf" exec="pre_approach_node" name="pre_approach_node">
         <param name="obstacle" value="$(var obstacle)"/>
