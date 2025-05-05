@@ -16,15 +16,17 @@
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
-double obstacle = 0.3;
-double degrees = 0;
-
 class PreApproachNode : public rclcpp::Node {
 public:
   PreApproachNode() : Node("pre_approach_node") {
 
-    cmd_vel_publisher = this->create_publisher<geometry_msgs::msg::Twist>(
-        "/diffbot_base_controller/cmd_vel_unstamped", 10);
+    this->declare_parameter("obstacle", 0.0);
+    this->declare_parameter("degrees", 0);
+    getting_params();
+    // RCLCPP_INFO(this->get_logger(), "Obstacle parameter is : %f", obstacle);
+
+    cmd_vel_publisher =
+        this->create_publisher<geometry_msgs::msg::Twist>("robot/cmd_vel", 10);
     timer_ = this->create_wall_timer(
         500ms, std::bind(&PreApproachNode::timer_callback, this));
 
@@ -36,6 +38,12 @@ public:
   }
 
 private:
+  void getting_params() {
+    obstacle =
+        this->get_parameter("obstacle").get_parameter_value().get<double>();
+    degrees = this->get_parameter("degrees").get_parameter_value().get<int>();
+  }
+
   void timer_callback() {
     geometry_msgs::msg::Twist twist_cmd;
 
@@ -95,6 +103,8 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
 
   double front_distance = 0.0;
+  double obstacle;
+  int degrees;
 };
 
 int main(int argc, char *argv[]) {
