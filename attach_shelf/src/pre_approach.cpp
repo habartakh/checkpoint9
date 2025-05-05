@@ -27,22 +27,33 @@ public:
     scan_sub = this->create_subscription<sensor_msgs::msg::LaserScan>(
         "scan", 10, std::bind(&PreApproachNode::scan_callback, this, _1));
 
-    odom_sub = this->create_subscription<nav_msgs::msg::Odometry>(
-        "odom", 10, std::bind(&PreApproachNode::odom_callback, this, _1));
+    // odom_sub = this->create_subscription<nav_msgs::msg::Odometry>(
+    //     "odom", 10, std::bind(&PreApproachNode::odom_callback, this, _1));
   }
 
 private:
-  void timer_callback() { publisher_->publish(); }
+  void timer_callback() {}
 
-  void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) const {
+  void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
 
-    RCLCPP_INFO(this->get_logger(), "I heard scan data");
+    // RCLCPP_INFO(this->get_logger(), "I heard scan data");
+
+    std::cout << "ranges length is : " << msg->ranges.size() << std::endl;
+    std::cout << "range_max is : " << msg->range_max << std::endl;
+    std::cout << "range_min is : " << msg->range_min << std::endl;
+    std::cout << "angle_min is : " << msg->angle_min << std::endl;
+    std::cout << "angle_max is : " << msg->angle_max << std::endl;
+    std::cout << "angle increment is : " << msg->angle_increment << std::endl;
+
+    std::cout << "msg->ranges[0] is : " << msg->ranges[0] << std::endl;
+    std::cout << "msg->ranges[540] is : " << msg->ranges[540] << std::endl;
+    std::cout << "msg->ranges[1081] is : " << msg->ranges[1081] << std::endl;
   }
 
-  void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg) const {
+  //   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg) const {
 
-    RCLCPP_INFO(this->get_logger(), "I heard odometry data");
-  }
+  //     RCLCPP_INFO(this->get_logger(), "I heard odometry data");
+  //   }
 
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher;
