@@ -1,6 +1,8 @@
 #include <chrono>
+#include <cmath>
 #include <functional>
 #include <memory>
+#include <numeric>
 #include <string>
 
 #include "geometry_msgs/msg/twist.hpp"
@@ -34,20 +36,29 @@ public:
 private:
   void timer_callback() {}
 
-  void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+  void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)  {
 
-    // RCLCPP_INFO(this->get_logger(), "I heard scan data");
+    if (!msg->ranges.empty()) {
 
-    std::cout << "ranges length is : " << msg->ranges.size() << std::endl;
-    std::cout << "range_max is : " << msg->range_max << std::endl;
-    std::cout << "range_min is : " << msg->range_min << std::endl;
-    std::cout << "angle_min is : " << msg->angle_min << std::endl;
-    std::cout << "angle_max is : " << msg->angle_max << std::endl;
-    std::cout << "angle increment is : " << msg->angle_increment << std::endl;
+      auto ranges_middle_iterator =
+          msg->ranges.begin() + (msg->ranges.size() / 2); // At the number 540
 
-    std::cout << "msg->ranges[0] is : " << msg->ranges[0] << std::endl;
-    std::cout << "msg->ranges[540] is : " << msg->ranges[540] << std::endl;
-    std::cout << "msg->ranges[1081] is : " << msg->ranges[1081] << std::endl;
+      // For a more robust computation of the front distance, we will use the
+      // average of the distances of the 20 front rays of the laser sensor
+      std::vector<float> front_ranges_copy;
+      std::copy_if(ranges_middle_iterator - 10, ranges_middle_iterator + 10,
+                   std::back_inserter(front_ranges_copy),
+                   [](float x) { return (std::isfinite(x)); });
+
+      front_distance = std::accumulate(front_ranges_copy.begin(),
+                                       front_ranges_copy.end(), 0.0) /
+                       front_ranges_copy.size();
+
+      RCLCPP_INFO(this->get_logger(), "The front distance is: %f ",
+                  front_distance);
+
+
+    }
   }
 
   //   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg) const {
@@ -59,6 +70,8 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
+
+  float front_distance = 0.0;
 };
 
 int main(int argc, char *argv[]) {
