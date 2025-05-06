@@ -25,16 +25,34 @@ public:
     this->declare_parameter("degrees", 0);
     getting_params();
 
+    // We use MutuallyExclusive groups to manage the execution of the callbacks
+    // Thus, each callback will be executed in a separate thread
+    timer_callback_group_ = this->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive);
+
+    scan_callback_group_ = this->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive);
+    odom_callback_group_ = this->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive);
+
+    rclcpp::SubscriptionOptions options1;
+    options1.callback_group = scan_callback_group_;
+    rclcpp::SubscriptionOptions options2;
+    options2.callback_group = odom_callback_group_;
+
     cmd_vel_publisher =
         this->create_publisher<geometry_msgs::msg::Twist>("robot/cmd_vel", 10);
     timer_ = this->create_wall_timer(
-        500ms, std::bind(&PreApproachNode::timer_callback, this));
+        500ms, std::bind(&PreApproachNode::timer_callback, this),
+        timer_callback_group_);
 
     scan_sub = this->create_subscription<sensor_msgs::msg::LaserScan>(
-        "scan", 10, std::bind(&PreApproachNode::scan_callback, this, _1));
+        "scan", 10, std::bind(&PreApproachNode::scan_callback, this, _1),
+        options1);
 
     odom_sub = this->create_subscription<nav_msgs::msg::Odometry>(
-        "odom", 10, std::bind(&PreApproachNode::odom_callback, this, _1));
+        "odom", 10, std::bind(&PreApproachNode::odom_callback, this, _1),
+        options2);
   }
 
 private:
@@ -61,6 +79,7 @@ private:
 
     case State::SECOND_STEP_DONE:
       RCLCPP_INFO_ONCE(this->get_logger(), "Pre-approach phase is finished!");
+      rclcpp::shutdown();
       break;
     }
   }
@@ -70,11 +89,12 @@ private:
   void first_step_pre_approach() {
 
     if (std::abs(front_distance - obstacle) > 0.05) {
-      RCLCPP_INFO(this->get_logger(), "The front distance is: %f ",
+      RCLCPP_INFO(this->get_logger(),
+                  "The distance to  the nearest obstacle ahead is: %f ",
                   front_distance);
       RCLCPP_INFO_ONCE(this->get_logger(),
                        "First step of the pre-approach : Moving forward...");
-      twist_cmd.linear.x = 0.2;
+      twist_cmd.linear.x = 0.25;
       twist_cmd.angular.z = 0.0;
     } else {
       state = State::FIRST_STEP_DONE;
@@ -149,6 +169,10 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
 
+  rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr scan_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr odom_callback_group_;
+
   double front_distance = 0.0;
   double current_heading = 0.0;
   double start_heading = 0.0; // heading before rotation of the robot
@@ -168,7 +192,14 @@ private:
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<PreApproachNode>());
+
+  std::shared_ptr<PreApproachNode> pre_approach_node =
+      std::make_shared<PreApproachNode>();
+
+  rclcpp::executors::MultiThreadedExecutor executor;
+  executor.add_node(pre_approach_node);
+  executor.spin();
+
   rclcpp::shutdown();
   return 0;
 }
