@@ -5,7 +5,7 @@
     <let name="rviz_config" value="$(find-pkg-share attach_shelf)/rviz/default.rviz"/>
     <node name="rviz2" pkg="rviz2" exec="rviz2" args="-d $(var rviz_config)"/>
 
-    <node pkg="attach_shelf" exec="pre_approach_node" name="pre_approach_node">
+    <node pkg="attach_shelf" exec="pre_approach_node" name="pre_approach_node" output="screen">
         <param name="obstacle" value="$(var obstacle)"/>
         <param name="degrees" value="$(var degrees)"/>
         <remap from="/robot/cmd_vel" to="/diffbot_base_controller/cmd_vel_unstamped"/>
