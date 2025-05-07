@@ -50,7 +50,35 @@ private:
     //           << std::endl;
   }
 
-  
+  void shelf_leg_detection(std::vector<float> intensities_vector) {
+
+    // strore all the indexes of the rays having intensities >= 8000
+    // inside the shelf_laser_indexes vector
+    std::vector<int> shelf_laser_indexes;
+    for (auto it = intensities_vector.begin(); it != intensities_vector.end();
+         ++it) {
+      if (*it >= 8000) {
+        int shelf_index = it - intensities_vector.begin();
+        shelf_laser_indexes.push_back(shelf_index);
+        std::cout << "shelf_index = " << shelf_index
+                  << ", intensity_value = " << *it << std::endl;
+      }
+    }
+
+    // find the number of the shelf legs detected
+    // if two legs were detected, the intensity indexes won't be consecutive
+    auto it = std::adjacent_find(shelf_laser_indexes.begin(),
+                                 shelf_laser_indexes.end(),
+                                 [](int x, int y) { return y != x + 1; });
+
+    // if the two legs were detected
+    if (it != shelf_laser_indexes.end()) {
+      two_legs_detected = true;
+
+      //   std::cout << "*it = " << *it << std::endl;
+      // rclcpp::shutdown();
+    }
+  }
 };
 
 int main(int argc, char *argv[]) {
