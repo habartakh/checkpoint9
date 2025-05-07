@@ -33,9 +33,13 @@ ament_target_dependencies(pre_approach_node rclcpp geometry_msgs sensor_msgs nav
 add_executable(pre_approach_v2_node src/pre_approach_v2.cpp)
 ament_target_dependencies(pre_approach_v2_node rclcpp geometry_msgs sensor_msgs nav_msgs tf2_geometry_msgs)
 
+add_executable(approach_service_server_node src/approach_service_server.cpp)
+ament_target_dependencies(approach_service_server_node rclcpp geometry_msgs sensor_msgs)
+
 install(TARGETS
    pre_approach_node
    pre_approach_v2_node
+   approach_service_server_node
    DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -49,5 +53,10 @@ install(DIRECTORY
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GoToLoading.srv"
 )
+
+rosidl_get_typesupport_target(cpp_typesupport_target
+  ${PROJECT_NAME} rosidl_typesupport_cpp)
+
+target_link_libraries(approach_service_server_node "${cpp_typesupport_target}")
 
 ament_package()
