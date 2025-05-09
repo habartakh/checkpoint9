@@ -17,6 +17,7 @@ find_package(tf2_ros REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
@@ -36,7 +37,7 @@ add_executable(pre_approach_v2_node src/pre_approach_v2.cpp)
 ament_target_dependencies(pre_approach_v2_node rclcpp geometry_msgs sensor_msgs nav_msgs tf2_geometry_msgs)
 
 add_executable(approach_service_server_node src/approach_service_server.cpp)
-ament_target_dependencies(approach_service_server_node rclcpp geometry_msgs sensor_msgs tf2 tf2_ros)
+ament_target_dependencies(approach_service_server_node rclcpp geometry_msgs sensor_msgs tf2 tf2_ros tf2_geometry_msgs)
 
 install(TARGETS
    pre_approach_node
