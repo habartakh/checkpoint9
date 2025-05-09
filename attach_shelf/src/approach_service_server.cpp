@@ -36,15 +36,15 @@ public:
         "approach_shelf",
         std::bind(&ApproachShelfServer::service_callback, this, _1, _2));
 
+    scan_sub = this->create_subscription<sensor_msgs::msg::LaserScan>(
+        "scan", 10, std::bind(&ApproachShelfServer::scan_callback, this, _1));
+
     publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(
         "diffbot_base_controller/cmd_vel_unstamped", 10);
 
     timer_ = this->create_wall_timer(
         500ms, std::bind(&ApproachShelfServer::control_loop, this));
     // timer_->cancel(); // Cancel the timer till we start the service
-
-    scan_sub = this->create_subscription<sensor_msgs::msg::LaserScan>(
-        "scan", 10, std::bind(&ApproachShelfServer::scan_callback, this, _1));
 
     // Initialize the transform broadcaster
     tf_static_broadcaster_ =
@@ -53,6 +53,9 @@ public:
     // Initialize the tf listener
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
+    // lift_shelf_pub = this->create_publisher<std::msgs::msg::Twist>(
+    //     "diffbot_base_controller/cmd_vel_unstamped", 10);
 
     published_cart_frame = false;
   }
@@ -94,12 +97,18 @@ private:
   }
 
   void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
-    angle_increment = msg->angle_increment;
-    laser_scan_msg = msg;
+
+    if (msg != nullptr) {
+      angle_increment = msg->angle_increment;
+      laser_scan_msg = msg;
+    } else {
+      RCLCPP_INFO(this->get_logger(), " No laser_scan message received yet...");
+    }
   }
 
   void control_loop() {
 
+    // The cart_frame is a fixed frame, thus we publish its tf just once
     if (published_cart_frame == false) {
       shelf_leg_detection();
       publish_cart_frame_tf();
@@ -107,7 +116,8 @@ private:
       published_cart_frame = true;
     }
 
-    // approach_cart_legs_center();
+    approach_cart_legs_center();
+    move_under_cart();
   }
 
   void shelf_leg_detection() {
@@ -143,26 +153,23 @@ private:
     int middle_ray_index = (int)laser_scan_msg->intensities.size() / 2;
 
     int leg_1_index = shelf_laser_indexes[0];
-    double leg1_angle = (leg_1_index - middle_ray_index) * angle_increment;
-    double leg1_x = -laser_scan_msg->ranges[leg_1_index] * std::sin(leg1_angle);
-    double leg1_y = -laser_scan_msg->ranges[leg_1_index] * std::cos(leg1_angle);
+    double leg1_angle = -(leg_1_index - middle_ray_index) * angle_increment;
+    // double leg1_angle = -1 * (laser_scan_msg->angle_min +
+    //                           laser_scan_msg->angle_increment * leg_1_index);
+
+    double leg1_x = laser_scan_msg->ranges[leg_1_index] * std::cos(leg1_angle);
+    double leg1_y = laser_scan_msg->ranges[leg_1_index] * std::sin(leg1_angle);
 
     int leg_2_index = shelf_laser_indexes.back();
-    double leg2_angle = (leg_2_index - middle_ray_index) * angle_increment;
+    double leg2_angle = -(leg_2_index - middle_ray_index) * angle_increment;
+    // double leg2_angle = -1 * (laser_scan_msg->angle_min +
+    //                           laser_scan_msg->angle_increment * leg_2_index);
+
     double leg2_x = laser_scan_msg->ranges[leg_2_index] * std::cos(leg2_angle);
     double leg2_y = laser_scan_msg->ranges[leg_2_index] * std::sin(leg2_angle);
 
     double middle_point_x = (leg1_x + leg2_x) / 2.0;
     double middle_point_y = (leg1_y + leg2_y) / 2.0;
-
-    std::cout << "middle_ray_index : " << middle_ray_index << std::endl;
-    std::cout << "leg_1_index : " << leg_1_index << std::endl;
-    std::cout << "leg_2_index : " << leg_2_index << std::endl;
-    std::cout << "leg2_angle : " << leg2_angle << std::endl;
-    std::cout << "middle_point_x : " << middle_point_x << std::endl;
-    std::cout << "middle_point_y : " << middle_point_y << std::endl;
-
-    /*********************************************************************************************/
 
     // To get the tf between odom and the cart frame :
     // First, compute the pose of the cart_frame origin relative to laser_frame
@@ -192,7 +199,7 @@ private:
     t.header.stamp = this->get_clock()->now();
     t.header.frame_id = "odom";
     t.child_frame_id = "cart_frame";
-    t.transform.translation.x = odom_pose.pose.position.x - 0.07;
+    t.transform.translation.x = odom_pose.pose.position.x;
     t.transform.translation.y = odom_pose.pose.position.y;
     t.transform.translation.z = 0.0;
 
@@ -227,37 +234,51 @@ private:
     auto x = t.transform.translation.x;
     auto y = t.transform.translation.y;
 
+    std::cout << "t.transform.translation.x : " << x << std::endl;
+    std::cout << "t.transform.translation.y : " << y << std::endl;
+
     float error_distance = std::sqrt(x * x + y * y);
     float error_yaw = std::atan2(y, x);
     RCLCPP_INFO(this->get_logger(), "Error distance: %.4f", error_distance);
     RCLCPP_INFO(this->get_logger(), "Error yaw: %.4f", error_yaw);
 
     geometry_msgs::msg::Twist msg;
-    if (error_distance > 0.05) {
-      // msg.angular.z = -0.5 * error_yaw;
-      msg.angular.z = 0;
-      msg.linear.x = std::min(1.0 * error_distance, 0.1);
-      RCLCPP_INFO(this->get_logger(), "Z angular: %.3f", msg.angular.z);
-      RCLCPP_INFO(this->get_logger(), "X linear: %.3f", msg.linear.x);
-    } else {
-      msg.angular.z = 0;
-      msg.linear.x = 0;
-      RCLCPP_INFO(this->get_logger(), "Final approach completed.");
-    }
 
+    // Correct the yaw of the robot
+    // if (std::abs(error_yaw) > 0.2) {
+    //   msg.angular.z = (error_yaw > 0 ? -0.1 : 0.1);
+    //   msg.linear.x = 0.0;
+    //   // publisher_->publish(msg);
+
+    //   std::cout << "CORRECT ERROR YAW " << std::endl;
+
+    // }
+
+    // Then correct the distance error
+    // else {
+    if (std::abs(error_distance) > 0.05) {
+      std::cout << "CORRECT ERROR DISTANCE " << std::endl;
+      msg.angular.z = 0.0;
+      msg.linear.x = 0.1;
+      publisher_->publish(msg);
+
+    } else {
+      RCLCPP_INFO(this->get_logger(), "Final approach completed.");
+      return;
+    }
+    //}
+  }
+  void move_under_cart() {
+    geometry_msgs::msg::Twist msg;
+
+    msg.linear.x = 0.3;
+    msg.angular.z = 0;
     publisher_->publish(msg);
 
-    // static const double scaleRotationRate = 1.0;
-    // // msg.angular.z = scaleRotationRate *
-    // //                 atan2(t.transform.translation.y,
-    // //                 t.transform.translation.x);
-    // msg.angular.z = 0.0;
-
-    // static const double scaleForwardSpeed = 0.5;
-    // msg.linear.x = scaleForwardSpeed * sqrt(pow(t.transform.translation.x, 2)
-    // +
-    //                                         pow(t.transform.translation.y,
-    //                                         2));
+    rclcpp::sleep_for(std::chrono::seconds(1));
+    msg.angular.z = 0;
+    msg.linear.x = 0;
+    publisher_->publish(msg);
   }
 };
 
