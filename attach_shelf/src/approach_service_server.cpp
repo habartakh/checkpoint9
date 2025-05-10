@@ -3,6 +3,7 @@
 #include "geometry_msgs/msg/twist.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
+#include "std_msgs/msg/string.hpp"
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2/exceptions.h"
 #include "tf2/transform_datatypes.h"
@@ -28,10 +29,6 @@ class ApproachShelfServer : public rclcpp::Node {
 public:
   ApproachShelfServer() : Node("service_stop") {
 
-    this->declare_parameter("final_approach", false);
-    final_approach =
-        this->get_parameter("final_approach").get_parameter_value().get<bool>();
-
     srv_ = create_service<GoToLoading>(
         "approach_shelf",
         std::bind(&ApproachShelfServer::service_callback, this, _1, _2));
@@ -42,29 +39,34 @@ public:
     publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(
         "diffbot_base_controller/cmd_vel_unstamped", 10);
 
-    timer_ = this->create_wall_timer(
-        500ms, std::bind(&ApproachShelfServer::control_loop, this));
-    // timer_->cancel(); // Cancel the timer till we start the service
+    shelf_detection_timer = this->create_wall_timer(
+        500ms, std::bind(&ApproachShelfServer::shelf_leg_detection, this));
+    shelf_detection_timer->cancel(); // Cancel the timer till service start
 
-    // Initialize the transform broadcaster
+    move_cart_center_timer = this->create_wall_timer(
+        500ms, std::bind(&ApproachShelfServer::move_cart_legs_center, this));
+    move_cart_center_timer->cancel(); // Cancel the timer till service start
+
     tf_static_broadcaster_ =
         std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
 
-    // Initialize the tf listener
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-    // lift_shelf_pub = this->create_publisher<std::msgs::msg::Twist>(
-    //     "diffbot_base_controller/cmd_vel_unstamped", 10);
+    // lift_shelf_pub =
+    //     this->create_publisher<std_msgs::msg::String>("elevator_up", 10);
 
     published_cart_frame = false;
+    service_complete = false;
   }
 
 private:
-  bool final_approach;
   rclcpp::Service<GoToLoading>::SharedPtr srv_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
-  rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr lift_shelf_pub;
+
+  rclcpp::TimerBase::SharedPtr shelf_detection_timer;
+  rclcpp::TimerBase::SharedPtr move_cart_center_timer;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
 
@@ -78,21 +80,50 @@ private:
   bool two_legs_detected = false;
   bool broadcast_cart_tf = false;
   bool published_cart_frame = false;
+  bool service_complete = false;
+  bool start_move_under_cart = false;
+  bool reached_final_position = false;
 
   void service_callback(const std::shared_ptr<GoToLoading::Request> request,
                         const std::shared_ptr<GoToLoading::Response> response) {
 
-    request->attach_to_shelf = final_approach; // set the request
+    service_complete = false;
+    shelf_detection_timer->reset();
 
-    if (request->attach_to_shelf) {
-      RCLCPP_INFO(this->get_logger(), " Initiating final approach procedure.");
-      timer_->reset(); // starts the timer and execute control loop
-    }
+    if (two_legs_detected) {
 
-    else {
-      timer_->cancel(); // stop the timer
-      RCLCPP_INFO(this->get_logger(),
-                  " Not initiating final approach procedure.");
+      shelf_detection_timer->cancel();
+
+      // Publish the cart_frame
+      publish_cart_frame_tf();
+      RCLCPP_INFO(this->get_logger(), " Published cart_frame! ");
+
+      // if the service request is true, move the robot to the shelf and lift it
+      if (request->attach_to_shelf) {
+
+        reached_final_position = false;
+
+        move_cart_center_timer->reset();
+
+        // wait till the robot reaches is under the cart to return service
+        // response
+        rclcpp::Rate loop_rate(10);
+        while (rclcpp::ok() && !service_complete) {
+          loop_rate.sleep();
+        }
+
+        response->complete = true;
+
+      } else {
+        RCLCPP_INFO_ONCE(this->get_logger(),
+                         " The final approach was not requested.");
+        response->complete = false;
+      }
+
+    } else {
+      // if only one or no legs were detected, return false
+      RCLCPP_INFO_ONCE(this->get_logger(), "Unable to detect two shelf legs.");
+      response->complete = false;
     }
   }
 
@@ -104,20 +135,6 @@ private:
     } else {
       RCLCPP_INFO(this->get_logger(), " No laser_scan message received yet...");
     }
-  }
-
-  void control_loop() {
-
-    // The cart_frame is a fixed frame, thus we publish its tf just once
-    if (published_cart_frame == false) {
-      shelf_leg_detection();
-      publish_cart_frame_tf();
-      RCLCPP_INFO(this->get_logger(), " Published cart_frame ONCE!!!!!! ");
-      published_cart_frame = true;
-    }
-
-    approach_cart_legs_center();
-    move_under_cart();
   }
 
   void shelf_leg_detection() {
@@ -153,23 +170,20 @@ private:
     int middle_ray_index = (int)laser_scan_msg->intensities.size() / 2;
 
     int leg_1_index = shelf_laser_indexes[0];
-    double leg1_angle = -(leg_1_index - middle_ray_index) * angle_increment;
-    // double leg1_angle = -1 * (laser_scan_msg->angle_min +
-    //                           laser_scan_msg->angle_increment * leg_1_index);
-
+    double leg1_angle = (leg_1_index - middle_ray_index) * angle_increment;
     double leg1_x = laser_scan_msg->ranges[leg_1_index] * std::cos(leg1_angle);
     double leg1_y = laser_scan_msg->ranges[leg_1_index] * std::sin(leg1_angle);
 
     int leg_2_index = shelf_laser_indexes.back();
-    double leg2_angle = -(leg_2_index - middle_ray_index) * angle_increment;
-    // double leg2_angle = -1 * (laser_scan_msg->angle_min +
-    //                           laser_scan_msg->angle_increment * leg_2_index);
-
+    double leg2_angle = (leg_2_index - middle_ray_index) * angle_increment;
     double leg2_x = laser_scan_msg->ranges[leg_2_index] * std::cos(leg2_angle);
     double leg2_y = laser_scan_msg->ranges[leg_2_index] * std::sin(leg2_angle);
 
     double middle_point_x = (leg1_x + leg2_x) / 2.0;
     double middle_point_y = (leg1_y + leg2_y) / 2.0;
+    double middle_point_distance = std::sqrt(middle_point_x * middle_point_x +
+                                             middle_point_y * middle_point_y);
+    double middle_point_angle = std::atan2(middle_point_y, middle_point_x);
 
     // To get the tf between odom and the cart frame :
     // First, compute the pose of the cart_frame origin relative to laser_frame
@@ -177,8 +191,10 @@ private:
     geometry_msgs::msg::PoseStamped laser_pose;
     laser_pose.header.frame_id = "robot_front_laser_base_link";
     laser_pose.header.stamp = this->get_clock()->now();
-    laser_pose.pose.position.x = middle_point_x;
-    laser_pose.pose.position.y = middle_point_y;
+    laser_pose.pose.position.x =
+        middle_point_distance * std::cos(middle_point_angle);
+    laser_pose.pose.position.y =
+        middle_point_distance * std::sin(middle_point_angle);
     laser_pose.pose.position.z = 0.0;
     laser_pose.pose.orientation.w = 1.0;
 
@@ -215,69 +231,79 @@ private:
     tf_static_broadcaster_->sendTransform(t);
   }
 
-  void approach_cart_legs_center() {
+  void move_cart_legs_center() {
     std::string fromFrameRel = "cart_frame";
     std::string toFrameRel = "robot_base_footprint";
     geometry_msgs::msg::TransformStamped t;
 
     // Look up for the transformation between target_frame and robot frames
     // and send velocity commands for robot to reach target_frame
-    try {
-      t = tf_buffer_->lookupTransform(toFrameRel, fromFrameRel,
-                                      tf2::TimePointZero);
-    } catch (const tf2::TransformException &ex) {
-      RCLCPP_INFO(this->get_logger(), "Could not transform %s to %s: %s",
-                  toFrameRel.c_str(), fromFrameRel.c_str(), ex.what());
-      return;
+    if (!reached_final_position) {
+
+      try {
+        t = tf_buffer_->lookupTransform(toFrameRel, fromFrameRel,
+                                        tf2::TimePointZero);
+      } catch (const tf2::TransformException &ex) {
+        RCLCPP_INFO(this->get_logger(), "Could not transform %s to %s: %s",
+                    toFrameRel.c_str(), fromFrameRel.c_str(), ex.what());
+        return;
+      }
+
+      auto x = t.transform.translation.x;
+      auto y = t.transform.translation.y;
+
+      std::cout << "t.transform.translation.x : " << x << std::endl;
+      std::cout << "t.transform.translation.y : " << y << std::endl;
+
+      float error_distance = std::sqrt(x * x + y * y);
+      float error_yaw = std::atan2(y, x);
+      RCLCPP_INFO(this->get_logger(), "Error distance: %.4f", error_distance);
+      RCLCPP_INFO(this->get_logger(), "Error yaw: %.4f", error_yaw);
+
+      geometry_msgs::msg::Twist msg;
+
+      if (std::abs(error_distance) > 0.05) {
+        std::cout << "CORRECT ERROR DISTANCE " << std::endl;
+        msg.angular.z = 1.0 * error_yaw;
+        msg.linear.x = 0.1;
+        publisher_->publish(msg);
+
+      } else {
+        msg.angular.z = 0.0;
+        msg.linear.x = 0.0;
+        publisher_->publish(msg);
+
+        RCLCPP_INFO(this->get_logger(),
+                    "Successfully approached cart legs center.");
+        move_under_cart();
+        reached_final_position = true;
+        service_complete = true;
+        // move_cart_center_timer->cancel();
+      }
     }
-
-    auto x = t.transform.translation.x;
-    auto y = t.transform.translation.y;
-
-    std::cout << "t.transform.translation.x : " << x << std::endl;
-    std::cout << "t.transform.translation.y : " << y << std::endl;
-
-    float error_distance = std::sqrt(x * x + y * y);
-    float error_yaw = std::atan2(y, x);
-    RCLCPP_INFO(this->get_logger(), "Error distance: %.4f", error_distance);
-    RCLCPP_INFO(this->get_logger(), "Error yaw: %.4f", error_yaw);
-
-    geometry_msgs::msg::Twist msg;
-
-    // Correct the yaw of the robot
-    // if (std::abs(error_yaw) > 0.2) {
-    //   msg.angular.z = (error_yaw > 0 ? -0.1 : 0.1);
-    //   msg.linear.x = 0.0;
-    //   // publisher_->publish(msg);
-
-    //   std::cout << "CORRECT ERROR YAW " << std::endl;
-
-    // }
-
-    // Then correct the distance error
-    // else {
-    if (std::abs(error_distance) > 0.05) {
-      std::cout << "CORRECT ERROR DISTANCE " << std::endl;
-      msg.angular.z = 0.0;
-      msg.linear.x = 0.1;
-      publisher_->publish(msg);
-
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Final approach completed.");
-      return;
-    }
-    //}
   }
+
+  // Move 30 cm along the x axis to go under the cart
   void move_under_cart() {
+    RCLCPP_INFO(this->get_logger(),
+                "Proceeding to move the robot under the cart.");
+
     geometry_msgs::msg::Twist msg;
+    msg.linear.x = 0.1;
+    msg.angular.z = 0.0;
 
-    msg.linear.x = 0.3;
-    msg.angular.z = 0;
-    publisher_->publish(msg);
+    auto start_time = this->now();
+    rclcpp::Rate rate(10);     // 10 Hz
+    double duration_sec = 6.0; // Total movement time (approximate)
 
-    rclcpp::sleep_for(std::chrono::seconds(1));
-    msg.angular.z = 0;
-    msg.linear.x = 0;
+    while ((this->now() - start_time).seconds() < duration_sec) {
+      publisher_->publish(msg);
+      rate.sleep();
+    }
+
+    // Stop the robot
+    msg.linear.x = 0.0;
+    msg.angular.z = 0.0;
     publisher_->publish(msg);
   }
 };
