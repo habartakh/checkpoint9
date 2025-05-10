@@ -69,11 +69,11 @@ public:
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-    // lift_shelf_pub =
-    //     this->create_publisher<std_msgs::msg::String>("elevator_up", 10);
-
-    published_cart_frame = false;
-    service_complete = false;
+    // change the durability to the same one as RVIZ
+    rclcpp::QoS qos_profile(rclcpp::KeepLast(1));
+    qos_profile.durability(RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL);
+    lift_shelf_pub = this->create_publisher<std_msgs::msg::String>(
+        "elevator_up", qos_profile);
   }
 
 private:
@@ -99,10 +99,8 @@ private:
   sensor_msgs::msg::LaserScan::SharedPtr laser_scan_msg;
   float angle_increment;
   bool two_legs_detected = false;
-  bool broadcast_cart_tf = false;
   bool published_cart_frame = false;
   bool service_complete = false;
-  bool start_move_under_cart = false;
   bool reached_final_position = false;
 
   void service_callback(const std::shared_ptr<GoToLoading::Request> request,
@@ -133,6 +131,7 @@ private:
           loop_rate.sleep();
         }
 
+        move_cart_center_timer->cancel();
         response->complete = true;
 
       } else {
@@ -273,59 +272,92 @@ private:
       auto x = t.transform.translation.x;
       auto y = t.transform.translation.y;
 
-      std::cout << "t.transform.translation.x : " << x << std::endl;
-      std::cout << "t.transform.translation.y : " << y << std::endl;
-
       float error_distance = std::sqrt(x * x + y * y);
       float error_yaw = std::atan2(y, x);
-      RCLCPP_INFO(this->get_logger(), "Error distance: %.4f", error_distance);
-      RCLCPP_INFO(this->get_logger(), "Error yaw: %.4f", error_yaw);
+      //   RCLCPP_INFO(this->get_logger(), "Error distance: %.4f",
+      //   error_distance); RCLCPP_INFO(this->get_logger(), "Error yaw: %.4f",
+      //   error_yaw);
 
       geometry_msgs::msg::Twist msg;
 
       if (std::abs(error_distance) > 0.05) {
-        std::cout << "CORRECT ERROR DISTANCE " << std::endl;
         msg.angular.z = 1.0 * error_yaw;
         msg.linear.x = 0.1;
         publisher_->publish(msg);
 
       } else {
-        msg.angular.z = 0.0;
-        msg.linear.x = 0.0;
-        publisher_->publish(msg);
 
         RCLCPP_INFO(this->get_logger(),
                     "Successfully approached cart legs center.");
         move_under_cart();
+        RCLCPP_INFO(this->get_logger(), "Successfully moved under the cart.");
+
         reached_final_position = true;
         service_complete = true;
-        // move_cart_center_timer->cancel();
       }
     }
   }
 
-  // Move 30 cm along the x axis to go under the cart
+  // Move 45 cm along the x axis to go under the cart
   void move_under_cart() {
     RCLCPP_INFO(this->get_logger(),
                 "Proceeding to move the robot under the cart.");
 
-    geometry_msgs::msg::Twist msg;
-    msg.linear.x = 0.1;
-    msg.angular.z = 0.0;
+    geometry_msgs::msg::Twist cmd;
+    cmd.linear.x = 0.1;
 
-    auto start_time = this->now();
-    rclcpp::Rate rate(10);     // 10 Hz
-    double duration_sec = 8.0; // Total movement time (approximate)
+    std::string odom_frame = "odom";
+    std::string base_frame = "robot_base_footprint";
 
-    while ((this->now() - start_time).seconds() < duration_sec) {
-      publisher_->publish(msg);
+    geometry_msgs::msg::TransformStamped start_tf;
+    try {
+      start_tf = tf_buffer_->lookupTransform(odom_frame, base_frame,
+                                             tf2::TimePointZero);
+    } catch (const tf2::TransformException &ex) {
+      RCLCPP_WARN(this->get_logger(), "TF error: %s", ex.what());
+      return;
+    }
+
+    double start_x = start_tf.transform.translation.x;
+    double start_y = start_tf.transform.translation.y;
+
+    rclcpp::Rate rate(10); // 10 Hz
+
+    while (rclcpp::ok()) {
+      publisher_->publish(cmd);
       rate.sleep();
+
+      geometry_msgs::msg::TransformStamped current_tf;
+      try {
+        current_tf = tf_buffer_->lookupTransform(odom_frame, base_frame,
+                                                 tf2::TimePointZero);
+      } catch (const tf2::TransformException &ex) {
+        RCLCPP_WARN(this->get_logger(), "TF error during move: %s", ex.what());
+        continue;
+      }
+
+      // Compute the distance travelled
+      double dx = current_tf.transform.translation.x - start_x;
+      double dy = current_tf.transform.translation.y - start_y;
+      double dist_moved = std::sqrt(dx * dx + dy * dy);
+
+      if (dist_moved >= 0.45) {
+        break;
+      }
     }
 
     // Stop the robot
-    msg.linear.x = 0.0;
-    msg.angular.z = 0.0;
-    publisher_->publish(msg);
+    cmd.linear.x = 0.0;
+    publisher_->publish(cmd);
+
+    lift_shelf();
+    RCLCPP_INFO(this->get_logger(), "Successfully lifted the shelf.");
+  }
+
+  void lift_shelf() {
+    std_msgs::msg::String lift_msg;
+    lift_msg.data = "";
+    lift_shelf_pub->publish(lift_msg);
   }
 };
 
