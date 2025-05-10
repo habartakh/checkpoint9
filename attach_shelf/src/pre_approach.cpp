@@ -53,6 +53,8 @@ public:
     odom_sub = this->create_subscription<nav_msgs::msg::Odometry>(
         "odom", 10, std::bind(&PreApproachNode::odom_callback, this, _1),
         options2);
+
+    state = State::FIRST_STEP;
   }
 
 private:
@@ -60,6 +62,18 @@ private:
     obstacle =
         this->get_parameter("obstacle").get_parameter_value().get<double>();
     degrees = this->get_parameter("degrees").get_parameter_value().get<int>();
+  }
+
+  // normalize angles to range [-pi, pi]
+  double normalize_angle(double angle) {
+    double normalized_angle = angle;
+    while (angle > M_PI) {
+      normalized_angle -= 2 * M_PI;
+    }
+    while (angle < -M_PI) {
+      normalized_angle += 2 * M_PI;
+    }
+    return normalized_angle;
   }
 
   void timer_callback() {
@@ -88,7 +102,7 @@ private:
   // desired location "obstacle" meters away from the wall
   void first_step_pre_approach() {
 
-    if (std::abs(front_distance - obstacle) > 0.05) {
+    if ((front_distance - obstacle) > 0.05) {
       RCLCPP_INFO(this->get_logger(),
                   "The distance to  the nearest obstacle ahead is: %f ",
                   front_distance);
@@ -109,7 +123,8 @@ private:
   // desired heading provided by the user in the arguments
   void second_step_pre_approach(double starting_angle) {
 
-    double target_angle = starting_angle + ((double)degrees * M_PI / 180);
+    double target_angle =
+        normalize_angle(starting_angle + ((double)degrees * M_PI / 180));
     double error_angle = current_heading - target_angle;
 
     if (std::abs(error_angle) > 0.05) {
