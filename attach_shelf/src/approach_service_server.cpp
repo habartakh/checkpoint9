@@ -102,12 +102,18 @@ private:
   bool published_cart_frame = false;
   bool service_complete = false;
   bool reached_final_position = false;
+  bool leg_detection_complete = false;
 
   void service_callback(const std::shared_ptr<GoToLoading::Request> request,
                         const std::shared_ptr<GoToLoading::Response> response) {
-
+    rclcpp::Rate loop_rate(10);
     service_complete = false;
     shelf_detection_timer->reset();
+
+    // wait till the robot received valid scan data
+    while (rclcpp::ok() && !leg_detection_complete) {
+      loop_rate.sleep();
+    }
 
     if (two_legs_detected) {
 
@@ -125,7 +131,7 @@ private:
         move_cart_center_timer->reset();
 
         // wait till the robot is under the cart to return service response
-        rclcpp::Rate loop_rate(10);
+
         while (rclcpp::ok() && !service_complete) {
           loop_rate.sleep();
         }
@@ -157,27 +163,29 @@ private:
   }
 
   void shelf_leg_detection() {
-
-    // store all the indexes of the rays having intensities >= 8000
-    // that correspond to the shelf legs inside a vector
-    for (auto it = laser_scan_msg->intensities.begin();
-         it != laser_scan_msg->intensities.end(); ++it) {
-      if (*it >= 8000) {
-        int shelf_index = it - laser_scan_msg->intensities.begin();
-        shelf_laser_indexes.push_back(shelf_index);
+    if (laser_scan_msg != nullptr) {
+      // store all the indexes of the rays having intensities >= 8000
+      // that correspond to the shelf legs inside a vector
+      for (auto it = laser_scan_msg->intensities.begin();
+           it != laser_scan_msg->intensities.end(); ++it) {
+        if (*it >= 8000) {
+          int shelf_index = it - laser_scan_msg->intensities.begin();
+          shelf_laser_indexes.push_back(shelf_index);
+        }
       }
-    }
 
-    // find the number of the shelf legs detected
-    // if two legs were detected, the intensity indexes won't be consecutive
-    auto it = std::adjacent_find(shelf_laser_indexes.begin(),
-                                 shelf_laser_indexes.end(),
-                                 [](int x, int y) { return y != x + 1; });
-    leg_2_first_index = it - shelf_laser_indexes.begin();
+      // find the number of the shelf legs detected
+      // if two legs were detected, the intensity indexes won't be consecutive
+      auto it = std::adjacent_find(shelf_laser_indexes.begin(),
+                                   shelf_laser_indexes.end(),
+                                   [](int x, int y) { return y != x + 1; });
+      leg_2_first_index = it - shelf_laser_indexes.begin();
 
-    // if the two legs were detected
-    if (it != shelf_laser_indexes.end()) {
-      two_legs_detected = true;
+      // if the two legs were detected
+      if (it != shelf_laser_indexes.end()) {
+        two_legs_detected = true;
+      }
+      leg_detection_complete = true;
     }
   }
 
