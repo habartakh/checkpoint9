@@ -21,30 +21,46 @@
 #include <numeric>
 
 using namespace std::chrono_literals;
-using GoToLoading = attach_shelf::srv::GoToLoading;
 using std::placeholders::_1;
 using std::placeholders::_2;
+using GoToLoading = attach_shelf::srv::GoToLoading;
 
 class ApproachShelfServer : public rclcpp::Node {
 public:
   ApproachShelfServer() : Node("service_stop") {
 
+    srv_cbg =
+        create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     srv_ = create_service<GoToLoading>(
         "approach_shelf",
-        std::bind(&ApproachShelfServer::service_callback, this, _1, _2));
+        std::bind(&ApproachShelfServer::service_callback, this, _1, _2),
+        rmw_qos_profile_services_default, srv_cbg);
+
+    scan_callback_group_ = this->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive);
+    rclcpp::SubscriptionOptions options1;
+    options1.callback_group = scan_callback_group_;
 
     scan_sub = this->create_subscription<sensor_msgs::msg::LaserScan>(
-        "scan", 10, std::bind(&ApproachShelfServer::scan_callback, this, _1));
+        "scan", 10, std::bind(&ApproachShelfServer::scan_callback, this, _1),
+        options1);
 
     publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(
         "diffbot_base_controller/cmd_vel_unstamped", 10);
 
+    shelf_detection_cp = this->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive);
+    move_cart_cp = this->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive);
+
     shelf_detection_timer = this->create_wall_timer(
-        500ms, std::bind(&ApproachShelfServer::shelf_leg_detection, this));
+        500ms, std::bind(&ApproachShelfServer::shelf_leg_detection, this),
+        shelf_detection_cp);
     shelf_detection_timer->cancel(); // Cancel the timer till service start
 
     move_cart_center_timer = this->create_wall_timer(
-        500ms, std::bind(&ApproachShelfServer::move_cart_legs_center, this));
+        500ms, std::bind(&ApproachShelfServer::move_cart_legs_center, this),
+        move_cart_cp);
     move_cart_center_timer->cancel(); // Cancel the timer till service start
 
     tf_static_broadcaster_ =
@@ -61,12 +77,17 @@ public:
   }
 
 private:
+  rclcpp::CallbackGroup::SharedPtr srv_cbg;
   rclcpp::Service<GoToLoading>::SharedPtr srv_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr lift_shelf_pub;
 
+  rclcpp::CallbackGroup::SharedPtr shelf_detection_cp;
+  rclcpp::CallbackGroup::SharedPtr move_cart_cp;
   rclcpp::TimerBase::SharedPtr shelf_detection_timer;
   rclcpp::TimerBase::SharedPtr move_cart_center_timer;
+
+  rclcpp::CallbackGroup::SharedPtr scan_callback_group_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
 
@@ -294,7 +315,7 @@ private:
 
     auto start_time = this->now();
     rclcpp::Rate rate(10);     // 10 Hz
-    double duration_sec = 6.0; // Total movement time (approximate)
+    double duration_sec = 8.0; // Total movement time (approximate)
 
     while ((this->now() - start_time).seconds() < duration_sec) {
       publisher_->publish(msg);
@@ -310,7 +331,14 @@ private:
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<ApproachShelfServer>());
+
+  std::shared_ptr<ApproachShelfServer> approach_server_node =
+      std::make_shared<ApproachShelfServer>();
+
+  rclcpp::executors::MultiThreadedExecutor executor;
+  executor.add_node(approach_server_node);
+  executor.spin();
+
   rclcpp::shutdown();
   return 0;
 }
