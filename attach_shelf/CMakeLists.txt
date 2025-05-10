@@ -62,5 +62,7 @@ rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} rosidl_typesupport_cpp)
 
 target_link_libraries(approach_service_server_node "${cpp_typesupport_target}")
+target_link_libraries(pre_approach_v2_node "${cpp_typesupport_target}")
+
 
 ament_package()
