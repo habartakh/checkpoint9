@@ -18,6 +18,8 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(attach_shelf REQUIRED)
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -31,9 +33,11 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-# Register the new Preapproach Component
+
 include_directories(include)
 
+
+# Register the new Preapproach Component
 
 add_library(pre_approach_component SHARED src/pre_approach_component.cpp)
 target_compile_definitions(pre_approach_component PRIVATE "COMPOSITION_BUILDING_DLL")
@@ -55,6 +59,38 @@ install(TARGETS
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
+
+
+
+# Register the new AttachServer Component
+
+add_library(attach_server_component SHARED src/pre_approach_component.cpp)
+target_compile_definitions(attach_server_component PRIVATE "COMPOSITION_BUILDING_DLL")
+ament_target_dependencies(attach_server_component
+  "rclcpp"
+  "rclcpp_components"
+  "geometry_msgs"
+  "sensor_msgs"
+  "nav_msgs"
+  "tf2"
+  "tf2_ros"
+  "std_msgs"
+  "tf2_geometry_msgs"
+  "attach_shelf"
+  )
+
+rclcpp_components_register_nodes(attach_server_component "my_components::AttachServer")
+set(node_plugins "${node_plugins}my_components::AttachServer;$<TARGET_FILE:attach_server_component>\n")
+
+
+install(TARGETS
+  pre_approach_component
+  attach_server_component
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
 
 # Install rviz files.
 install(DIRECTORY
