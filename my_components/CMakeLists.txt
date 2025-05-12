@@ -48,7 +48,7 @@ ament_target_dependencies(pre_approach_component
   "sensor_msgs"
   "nav_msgs"
   "tf2_geometry_msgs"
-  )
+)
 
 rclcpp_components_register_nodes(pre_approach_component "my_components::PreApproach")
 set(node_plugins "${node_plugins}my_components::PreApproach;$<TARGET_FILE:pre_approach_component>\n")
@@ -58,13 +58,14 @@ install(TARGETS
   pre_approach_component
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin)
+  RUNTIME DESTINATION bin
+)
 
 
 
 # Register the new AttachServer Component
 
-add_library(attach_server_component SHARED src/pre_approach_component.cpp)
+add_library(attach_server_component SHARED src/attach_server_component.cpp)
 target_compile_definitions(attach_server_component PRIVATE "COMPOSITION_BUILDING_DLL")
 ament_target_dependencies(attach_server_component
   "rclcpp"
@@ -77,7 +78,7 @@ ament_target_dependencies(attach_server_component
   "std_msgs"
   "tf2_geometry_msgs"
   "attach_shelf"
-  )
+)
 
 rclcpp_components_register_nodes(attach_server_component "my_components::AttachServer")
 set(node_plugins "${node_plugins}my_components::AttachServer;$<TARGET_FILE:attach_server_component>\n")
@@ -89,6 +90,19 @@ install(TARGETS
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
+)
+
+# Manual composition for AttachServer component
+add_executable(manual_composition src/manual_composition.cpp)
+target_link_libraries(manual_composition attach_server_component)
+
+ament_target_dependencies(manual_composition
+  "rclcpp"
+)
+
+install(TARGETS
+  manual_composition
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 

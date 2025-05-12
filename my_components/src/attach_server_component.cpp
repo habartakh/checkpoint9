@@ -26,7 +26,7 @@ AttachServer::AttachServer(const rclcpp::NodeOptions &options)
   srv_cbg = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   srv_ = create_service<GoToLoading>(
       "approach_shelf",
-      std::bind(&ApproachShelfServer::service_callback, this, _1, _2),
+      std::bind(&AttachServer::service_callback, this, _1, _2),
       rmw_qos_profile_services_default, srv_cbg);
 
   scan_callback_group_ =
@@ -35,7 +35,7 @@ AttachServer::AttachServer(const rclcpp::NodeOptions &options)
   options1.callback_group = scan_callback_group_;
 
   scan_sub = this->create_subscription<sensor_msgs::msg::LaserScan>(
-      "scan", 10, std::bind(&ApproachShelfServer::scan_callback, this, _1),
+      "scan", 10, std::bind(&AttachServer::scan_callback, this, _1),
       options1);
 
   publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(
@@ -47,12 +47,12 @@ AttachServer::AttachServer(const rclcpp::NodeOptions &options)
       this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
   shelf_detection_timer = this->create_wall_timer(
-      500ms, std::bind(&ApproachShelfServer::shelf_leg_detection, this),
+      500ms, std::bind(&AttachServer::shelf_leg_detection, this),
       shelf_detection_cp);
   shelf_detection_timer->cancel(); // Cancel the timer till service start
 
   move_cart_center_timer = this->create_wall_timer(
-      500ms, std::bind(&ApproachShelfServer::move_cart_legs_center, this),
+      500ms, std::bind(&AttachServer::move_cart_legs_center, this),
       move_cart_cp);
   move_cart_center_timer->cancel(); // Cancel the timer till service start
 
