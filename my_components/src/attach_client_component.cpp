@@ -44,6 +44,9 @@ void AttachClient::on_timer() {
       std::string response_string = response->complete ? "True" : "False";
       RCLCPP_INFO(this->get_logger(), "Service returned the response: %s ",
                   response_string.c_str());
+
+      // Terminate the program once the service response is received
+      rclcpp::shutdown();
     }
 
     else {
@@ -53,9 +56,6 @@ void AttachClient::on_timer() {
 
   auto future_result =
       client_->async_send_request(request, response_received_callback);
-
-  // Cancel the timer so it only runs once
-  timer_->cancel();
 }
 
 } // namespace my_components
