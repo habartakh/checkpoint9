@@ -311,7 +311,7 @@ private:
                 "Proceeding to move the robot under the cart.");
 
     geometry_msgs::msg::Twist cmd;
-    cmd.linear.x = 0.1;
+    cmd.linear.x = 0.15;
 
     std::string odom_frame = "odom";
     std::string base_frame = "robot_base_footprint";
