@@ -35,8 +35,7 @@ AttachServer::AttachServer(const rclcpp::NodeOptions &options)
   options1.callback_group = scan_callback_group_;
 
   scan_sub = this->create_subscription<sensor_msgs::msg::LaserScan>(
-      "scan", 10, std::bind(&AttachServer::scan_callback, this, _1),
-      options1);
+      "scan", 10, std::bind(&AttachServer::scan_callback, this, _1), options1);
 
   publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(
       "diffbot_base_controller/cmd_vel_unstamped", 10);
@@ -72,6 +71,7 @@ AttachServer::AttachServer(const rclcpp::NodeOptions &options)
 void AttachServer::service_callback(
     const std::shared_ptr<GoToLoading::Request> request,
     const std::shared_ptr<GoToLoading::Response> response) {
+
   rclcpp::Rate loop_rate(10);
   service_complete = false;
   shelf_detection_timer->reset();

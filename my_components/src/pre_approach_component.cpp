@@ -82,7 +82,7 @@ void PreApproach::timer_callback() {
 
   case State::SECOND_STEP_DONE:
     RCLCPP_INFO_ONCE(this->get_logger(), "Pre-approach phase is finished!");
-    rclcpp::shutdown();
+    //rclcpp::shutdown();
     break;
   }
 }
@@ -91,9 +91,9 @@ void PreApproach::timer_callback() {
 void PreApproach::first_step_pre_approach() {
 
   if ((front_distance - obstacle) > 0.05) {
-    RCLCPP_INFO(this->get_logger(),
-                "The distance to  the nearest obstacle ahead is: %f ",
-                front_distance);
+    // RCLCPP_INFO(this->get_logger(),
+    //             "The distance to  the nearest obstacle ahead is: %f ",
+    //             front_distance);
     RCLCPP_INFO_ONCE(this->get_logger(),
                      "First step of the pre-approach : Moving forward...");
     twist_cmd.linear.x = 0.25;
@@ -121,7 +121,7 @@ void PreApproach::second_step_pre_approach(double starting_angle) {
     twist_cmd.angular.z = (error_angle > 0 ? -0.3 : 0.3);
     RCLCPP_INFO_ONCE(this->get_logger(),
                      "Second step of the pre-approach: Turning ...");
-    RCLCPP_INFO(this->get_logger(), "error_angle : %f", error_angle);
+    // RCLCPP_INFO(this->get_logger(), "error_angle : %f", error_angle);
 
   } else {
     twist_cmd.linear.x = 0.0;
