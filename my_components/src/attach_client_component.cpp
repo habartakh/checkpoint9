@@ -53,6 +53,9 @@ void AttachClient::on_timer() {
 
   auto future_result =
       client_->async_send_request(request, response_received_callback);
+
+  // Cancel the timer so it only runs once
+  timer_->cancel();
 }
 
 } // namespace my_components
