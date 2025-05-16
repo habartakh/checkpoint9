@@ -38,8 +38,8 @@ PreApproach::PreApproach(const rclcpp::NodeOptions &options)
   rclcpp::SubscriptionOptions options2;
   options2.callback_group = odom_callback_group_;
 
-  cmd_vel_publisher =
-      this->create_publisher<geometry_msgs::msg::Twist>("diffbot_base_controller/cmd_vel_unstamped", 10);
+  cmd_vel_publisher = this->create_publisher<geometry_msgs::msg::Twist>(
+      "diffbot_base_controller/cmd_vel_unstamped", 10);
   timer_ = this->create_wall_timer(
       500ms, std::bind(&PreApproach::timer_callback, this),
       timer_callback_group_);
@@ -82,7 +82,7 @@ void PreApproach::timer_callback() {
 
   case State::SECOND_STEP_DONE:
     RCLCPP_INFO_ONCE(this->get_logger(), "Pre-approach phase is finished!");
-    //rclcpp::shutdown();
+    rclcpp::shutdown();
     break;
   }
 }
