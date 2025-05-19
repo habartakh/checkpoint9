@@ -20,7 +20,8 @@ def generate_launch_description():
                 ComposableNode(
                     package='my_components',
                     plugin='my_components::PreApproach',
-                    name='pre_approach'),
+                    name='pre_approach',
+                    parameters=[{'final_approach': True}]),
                 ComposableNode(
                     package='my_components',
                     plugin='my_components::AttachServer',

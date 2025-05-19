@@ -23,6 +23,12 @@ PreApproach::PreApproach(const rclcpp::NodeOptions &options)
   obstacle = 0.3;
   degrees = -90;
 
+  // declare whether the robot will execute the final approach after the
+  // pre-approach or not on a parameter
+  this->declare_parameter("final_approach", false);
+  final_approach =
+      this->get_parameter("final_approach").get_parameter_value().get<bool>();
+
   // We use MutuallyExclusive groups to manage the execution of the callbacks
   // Thus, each callback will be executed in a separate thread
   timer_callback_group_ =
@@ -82,7 +88,11 @@ void PreApproach::timer_callback() {
 
   case State::SECOND_STEP_DONE:
     RCLCPP_INFO_ONCE(this->get_logger(), "Pre-approach phase is finished!");
-    rclcpp::shutdown();
+    // Shutdown the process if the robot is only executing the pre-approach and
+    // nothing afterwards
+    if (!final_approach) {
+      rclcpp::shutdown();
+    }
     break;
   }
 }

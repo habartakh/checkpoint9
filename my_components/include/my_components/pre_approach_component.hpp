@@ -9,7 +9,7 @@
 #include "sensor_msgs/msg/laser_scan.hpp"
 
 namespace my_components {
-class PreApproach: public rclcpp::Node {
+class PreApproach : public rclcpp::Node {
 public:
   COMPOSITION_PUBLIC
   explicit PreApproach(const rclcpp::NodeOptions &options);
@@ -37,6 +37,7 @@ private:
   double start_heading = 0.0; // heading before rotation of the robot
   double obstacle;
   int degrees;
+  bool final_approach;
 
   geometry_msgs::msg::Twist twist_cmd;
 
